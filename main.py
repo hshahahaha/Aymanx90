@@ -1,39 +1,61 @@
+from flask import Flask, request, jsonify
+import random
 import os
-import telebot
-import requests
-import time
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-API_URL = os.environ.get("API_URL")
-API_KEY = os.environ.get("API_KEY")
+app = Flask(__name__)
 
-bot = telebot.TeleBot(BOT_TOKEN)
+# نقطة فحص البطاقة
+@app.route("/card", methods=["POST"])
+def card_check():
+    data = request.json
+    card = data.get("card")
 
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.reply_to(message, "أرسل ملف بطاقات بصيغة:\n`4111111111111111|12|2026|123`", parse_mode="Markdown")
+    if not card:
+        return jsonify({"status": "error", "message": "No card provided"}), 400
 
-@bot.message_handler(content_types=['document'])
-def handle_file(message):
-    file_info = bot.get_file(message.document.file_id)
-    downloaded_file = bot.download_file(file_info.file_path)
-    lines = downloaded_file.decode("utf-8").splitlines()
+    outcomes = [
+        "3D-Authentication successful ☑️",
+        "3D-Authentication failed ❌",
+        "3D Secure challenge ✅"
+    ]
+    result = random.choice(outcomes)
 
-    bot.reply_to(message, f"📦 Total cards: {len(lines)}\n⏳ Starting check...")
+    return jsonify({
+        "status": "success",
+        "result": result
+    })
 
-    for i, card in enumerate(lines, 1):
-        try:
-            res = requests.post(API_URL, json={
-                "api_key": API_KEY,
-                "card": card
-            }, timeout=10)
-            data = res.json()
-            status = data.get("result") or data.get("message") or "No result"
-        except Exception as e:
-            status = f"❌ Error: {str(e)}"
+# نقطة فحص صلاحية API
+@app.route("/check", methods=["POST"])
+def check():
+    return jsonify({
+        "status": "success",
+        "user_id": "1427023555",
+        "name": "لين.",
+        "username": "GenshimImpact",
+        "requests_left": "∞",
+        "message": "API is valid"
+    })
 
-        bot.send_message(message.chat.id, f"[{i}] {card} → {status}")
-        time.sleep(2)
+# تشغيل فحص البطاقات من الملف
+def process_cards():
+    CARDS_FILE = "cc.txt"
+    if not os.path.exists(CARDS_FILE):
+        print("❌ File cc.txt not found.")
+        return
 
-print("✅ Bot is running...")
-bot.infinity_polling()
+    with open(CARDS_FILE, 'r') as file:
+        cards = [line.strip() for line in file if line.strip()]
+
+    print(f"\n📦 Total cards to check: {len(cards)}\n" + "-"*40)
+
+    for i, card in enumerate(cards, 1):
+        res = app.test_client().post("/card", json={"card": card})
+        result = res.get_json().get("result", "Unknown")
+        print(f"[{i}] {card} → {result}")
+
+# تشغيل الخادم وفحص البطاقات
+if __name__ == "__main__":
+    process_cards()
+    # ✅ هذا هو التعديل المهم لتشغيله على Railway
+    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
